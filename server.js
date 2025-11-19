@@ -99,18 +99,20 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 // =================================================================
 
 // Use a wrapper function for all routes to ensure DB connection is made
+// From the corrected backend code:
+// From the corrected backend code:
 const routeHandler = (handler) => async (req, res) => {
     try {
-        await connectDb();
+        await connectDb(); // This ensures connection is attempted
         await handler(req, res);
     } catch (error) {
-        console.error("Route Handler Error:", error);
-        if (error.message === 'Failed to connect to the database.') {
-            return res.status(503).json({ message: 'Service temporarily unavailable. Database connection failed.' });
-        }
-        res.status(500).json({ message: 'A critical server error occurred.' });
+        // ... Error handling
     }
 };
+
+app.post('/api/auth/register', routeHandler(async (req, res) => {
+    // ... your registration logic
+}));
 
 // ------------------------- REGISTRATION ROUTE -------------------------
 app.post('/api/auth/register', routeHandler(async (req, res) => {
