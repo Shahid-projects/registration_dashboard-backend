@@ -16,8 +16,7 @@ const app = express();
 
 // CRITICAL CORS FIX: Ensure all variations of your frontend URL are allowed.
 const allowedOrigins = [
-    'https://registration-dashboard-frontend.vercel.app', 
-    'https://registration-dashboard-frontend.vercel.app/', 
+    'https://registration-dashboard-frontend.vercel.app',  
     'http://localhost:3000' 
 ];
 app.use(cors({
