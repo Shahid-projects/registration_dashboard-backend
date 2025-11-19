@@ -19,7 +19,7 @@ const app = express();
 
 // Configure CORS for security (allowing your Vercel frontend URL)
 const allowedOrigins = [
-    'https://portfolio-shahid-frontend.vercel.app', 
+    'https://registration-dashboard-frontend.vercel.app/', 
     'http://localhost:3000' // For local testing
 ];
 app.use(cors({
