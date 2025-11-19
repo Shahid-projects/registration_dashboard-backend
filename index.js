@@ -14,7 +14,7 @@ const app = express();
 //                           MIDDLEWARE
 // =================================================================
 
-// Added both versions of the frontend URL for maximum CORS compatibility
+// CRITICAL CORS FIX: Ensure all variations of your frontend URL are allowed.
 const allowedOrigins = [
     'https://registration-dashboard-frontend.vercel.app', 
     'https://registration-dashboard-frontend.vercel.app/', 
@@ -49,12 +49,10 @@ const connectDb = async () => {
     }
 
     if (!MONGO_URI) {
-        console.error('MONGO_URI is not defined. Check Vercel environment variables.');
         throw new Error('MONGO_URI_MISSING'); 
     }
     
     try {
-        // Connection recommended for Vercel Serverless
         await mongoose.connect(MONGO_URI);
         isConnected = true;
         console.log('=> New database connection established');
@@ -102,7 +100,6 @@ const routeHandler = (handler) => async (req, res) => {
             });
         }
 
-        // Handle Mongoose Duplicate Key Error (E11000)
         if (error.code === 11000) { 
             const field = Object.keys(error.keyPattern)[0];
             return res.status(409).json({
@@ -110,7 +107,6 @@ const routeHandler = (handler) => async (req, res) => {
             });
         }
 
-        // Generic catch-all
         res.status(500).json({ message: 'Internal Server Error.' });
     }
 };
