@@ -7,8 +7,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-// If you are using Vercel, .env variables are managed in the Vercel dashboard.
-// require('dotenv').config(); 
+// require('dotenv').config(); // Vercel manages this
 
 // Initialize Express app
 const app = express();
@@ -17,24 +16,24 @@ const app = express();
 //                           MIDDLEWARE
 // =================================================================
 
-// Configure CORS for security (allowing your Vercel frontend URL)
+// Ensure you replace 'https://registration-dashboard-frontend.vercel.app/' 
+// with the exact base URL of your deployed frontend (without the trailing slash if possible).
 const allowedOrigins = [
-    'https://registration-dashboard-frontend.vercel.app/', 
-    'http://localhost:3000' // For local testing
+    'https://registration-dashboard-frontend.vercel.app', // Corrected: removed trailing slash
+    'http://localhost:3000' 
 ];
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl) or if the origin is in the allowed list
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true,
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
 }));
 
-app.use(express.json()); // Parse JSON request bodies
+app.use(express.json()); 
 
 // =================================================================
 //                        DATABASE CONNECTION
@@ -43,28 +42,29 @@ app.use(express.json()); // Parse JSON request bodies
 const MONGO_URI = process.env.MONGO_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Use a global connection variable to avoid reconnecting on every serverless function call
 let isConnected;
 
 const connectDb = async () => {
-    if (isConnected) {
-        console.log('=> Using existing database connection');
-        return;
-    }
+    if (isConnected) {
+        console.log('=> Using existing database connection');
+        return;
+    }
 
-    if (!MONGO_URI) {
-        console.error('MONGO_URI is not defined. Check Vercel environment variables.');
-        return;
-    }
-    
-    try {
-        await mongoose.connect(MONGO_URI);
-        isConnected = true;
-        console.log('=> New database connection established');
-    } catch (err) {
-        console.error('MongoDB connection error:', err.message);
-        throw new Error('Failed to connect to the database.');
-    }
+    if (!MONGO_URI) {
+        console.error('MONGO_URI is not defined. Check Vercel environment variables.');
+        // Do NOT throw an error here, let the caller handle the check
+        throw new Error('MONGO_URI_MISSING'); 
+    }
+    
+    try {
+        // Use options recommended for Vercel Serverless
+        await mongoose.connect(MONGO_URI);
+        isConnected = true;
+        console.log('=> New database connection established');
+    } catch (err) {
+        console.error('MongoDB connection error:', err.message);
+        throw new Error('DATABASE_CONNECTION_FAILED');
+    }
 };
 
 // =================================================================
@@ -72,47 +72,52 @@ const connectDb = async () => {
 // =================================================================
 
 const UserSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-  },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true,
-    lowercase: true,
-  },
-  password: {
-    type: String,
-    required: true,
-  },
+  username: { type: String, required: true, unique: true, trim: true },
+  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+  password: { type: String, required: true },
 }, { timestamps: true });
 
-// Prevent Mongoose from compiling the model multiple times in development/serverless environment
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 // =================================================================
 //                            API ROUTES
 // =================================================================
 
-// Use a wrapper function for all routes to ensure DB connection is made
-// From the corrected backend code:
-// From the corrected backend code:
+/**
+ * NEW: Wrapper with complete error handling for database connection failures.
+ */
 const routeHandler = (handler) => async (req, res) => {
-    try {
-        await connectDb(); // This ensures connection is attempted
-        await handler(req, res);
-    } catch (error) {
-        // ... Error handling
-    }
+    try {
+        await connectDb(); // Ensure connection before executing the handler
+        await handler(req, res);
+    } catch (error) {
+        console.error("Route Handler Error:", error.message);
+
+        if (error.message === 'MONGO_URI_MISSING') {
+            return res.status(500).json({ 
+                message: 'Server configuration error: Database URI is missing.' 
+            });
+        }
+        
+        if (error.message === 'DATABASE_CONNECTION_FAILED') {
+            return res.status(503).json({ 
+                message: 'Service temporarily unavailable: Cannot connect to database. Check MongoDB IP Whitelisting.' 
+            });
+        }
+
+        // Handle Mongoose Duplicate Key Error (E11000)
+        if (error.code === 11000) { 
+            const field = Object.keys(error.keyPattern)[0];
+            return res.status(409).json({
+                message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists.`
+            });
+        }
+
+        // Generic catch-all for unknown errors
+        res.status(500).json({ message: 'Internal Server Error.' });
+    }
 };
 
-app.post('/api/auth/register', routeHandler(async (req, res) => {
-    // ... your registration logic
-}));
 
 // ------------------------- REGISTRATION ROUTE -------------------------
 app.post('/api/auth/register', routeHandler(async (req, res) => {
@@ -129,7 +134,7 @@ app.post('/api/auth/register', routeHandler(async (req, res) => {
     });
 
     if (existingUser) {
-      const field = existingUser.email === email ? 'Email' : 'Username';
+      const field = existingUser.email.toLowerCase() === email.toLowerCase() ? 'Email' : 'Username';
       return res.status(409).json({ message: `${field} is already taken.` });
     }
 
@@ -155,7 +160,6 @@ app.post('/api/auth/register', routeHandler(async (req, res) => {
         email: savedUser.email
       }
     });
-
 }));
 
 // ------------------------- LOGIN ROUTE -------------------------
@@ -170,26 +174,26 @@ app.post('/api/auth/login', routeHandler(async (req, res) => {
     // 2. Find the user by email
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials.' }); // Generic error for security
+      return res.status(401).json({ message: 'Invalid credentials.' }); 
     }
 
     // 3. Compare the provided password with the stored hash
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials.' }); // Generic error for security
+      return res.status(401).json({ message: 'Invalid credentials.' }); 
     }
 
     // 4. Create JWT Payload
     const payload = {
       user: {
         id: user.id,
-        username: user.username, // Include username in token
+        username: user.username,
       },
     };
 
     // 5. Sign the token
     if (!JWT_SECRET) {
-        throw new Error('JWT_SECRET is not configured.');
+        throw new Error('JWT_SECRET_MISSING'); // New check to throw a specific error
     }
 
     jwt.sign(
@@ -198,8 +202,8 @@ app.post('/api/auth/login', routeHandler(async (req, res) => {
       { expiresIn: '1h' },
       (err, token) => {
         if (err) {
-           console.error('JWT Signing Error:', err);
-           return res.status(500).json({ message: 'Token generation failed.' });
+           console.error('JWT Signing Error:', err);
+           return res.status(500).json({ message: 'Token generation failed.' });
         }
 
         // 6. Send token and user info to client
@@ -218,7 +222,7 @@ app.post('/api/auth/login', routeHandler(async (req, res) => {
 
 // Fallback route for Vercel deployment structure
 app.use((req, res) => {
-    res.status(404).json({ message: 'API route not found.' });
+    res.status(404).json({ message: 'API route not found.' });
 });
 
 // Export the app for Vercel Serverless Function deployment
