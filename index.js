@@ -20,7 +20,7 @@ const app = express();
 // with the exact base URL of your deployed frontend (without the trailing slash if possible).
 const allowedOrigins = [
     'https://registration-dashboard-frontend.vercel.app', // Corrected: removed trailing slash
-    'http://localhost:3000' 
+    'http://localhost:5000' 
 ];
 app.use(cors({
     origin: (origin, callback) => {
